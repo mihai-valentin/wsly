@@ -67,20 +67,55 @@ WSLY_WSL_EXE to the full path of a compatible launcher for this session.
 
 $wslPath = Resolve-WslyWslExecutable
 
+function Resolve-WslyBashHelper {
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$LauncherPath
+    )
+
+    $helperPath = Join-Path $PSScriptRoot 'wsly.bash'
+    if (-not (Test-Path -LiteralPath $helperPath -PathType Leaf)) {
+        throw "wsly helper is missing: $helperPath. Reinstall wsly to repair the installation."
+    }
+
+    # A checkout may be invoked through WSL's UNC provider. In that case use
+    # its already-native Linux path and explicitly select that same distro.
+    $uncMatch = [regex]::Match(
+        $helperPath,
+        '^\\\\wsl(?:\.localhost)?\\(?<distro>[^\\]+)\\(?<linuxPath>.+)$',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    if ($uncMatch.Success) {
+        return [pscustomobject]@{
+            Distro = $uncMatch.Groups['distro'].Value
+            Path = '/' + $uncMatch.Groups['linuxPath'].Value.Replace('\', '/')
+        }
+    }
+
+    $linuxPath = & $LauncherPath '--' 'wslpath' '-u' $helperPath
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($linuxPath)) {
+        throw "wsly could not translate its helper path for WSL: $helperPath"
+    }
+
+    return [pscustomobject]@{
+        Distro = $null
+        Path = $linuxPath.Trim()
+    }
+}
+
 if ($Command.Count -eq 0) {
     & $wslPath
     exit $LASTEXITCODE
 }
 
-# Bash receives the original command words as "$@".  Do not concatenate them
-# into the script: that would reinterpret spaces and shell metacharacters.
-$bashProgram = @'
-if "$@"; then
-    exec "${SHELL:-bash}" -i
-else
-    exit
-fi
-'@
+$bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath
+$wslArguments = @()
+if ($null -ne $bashHelper.Distro) {
+    $wslArguments += '-d', $bashHelper.Distro
+}
 
-& $wslPath '--' 'bash' '-ic' $bashProgram 'wsly' @Command
+$wslArguments += '--', 'bash', '-i', $bashHelper.Path
+
+& $wslPath @wslArguments @Command
 exit $LASTEXITCODE

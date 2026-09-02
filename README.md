@@ -87,16 +87,20 @@ by the command.
 ## Design
 
 The launcher is intentionally one file and has no dependencies beyond WSL.
-Internally it uses the equivalent of:
+The installed launcher is accompanied by a small Bash helper. `wsly` translates
+that helper's path for the active WSL distro, starts interactive Bash with the
+helper, and passes your command as individual arguments. The helper explicitly
+sources `~/.bashrc`, then runs the command and opens a shell on success.
+
+This avoids passing Bash program text through PowerShell's native-command
+argument marshalling. The behavior is equivalent to:
 
 ```powershell
-wsl.exe -- bash -ic '<command>; exec bash -i'
+<interactive Bash with your ~/.bashrc loaded>
 ```
 
-but safely forwards the original argument vector. Interactive Bash sources
-`~/.bashrc`, allowing configured shell functions to be resolved. If the
-requested command fails, `wsly` returns that exit code instead of opening a
-new shell.
+If the requested command fails, `wsly` returns that exit code instead of
+opening a new shell.
 
 ## Contributing
 
