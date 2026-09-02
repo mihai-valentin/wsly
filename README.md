@@ -61,7 +61,7 @@ alias. For an unusual installation or compatible replacement launcher, set an
 override before calling `wsly`:
 
 ```powershell
-$env:WSLY_WSL_EXE = 'D:\Tools\wsl.exe'
+$env:WSLY_WSL_EXE = '<path-to-compatible-wsl-launcher>'
 wsly project-jump api
 ```
 
