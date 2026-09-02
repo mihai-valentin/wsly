@@ -84,6 +84,23 @@ shell string. Quote an argument in PowerShell when it contains spaces.
 separate processes; instead, it opens a WSL shell whose directory was changed
 by the command.
 
+## Testing
+
+The repository's CI parses the PowerShell launcher on Windows and runs
+shell-level contract tests for the Bash helper on Linux. Run the helper tests
+locally with:
+
+```bash
+bash tests/test-wsly-bash.sh
+```
+
+The final integration check requires a real Windows host with WSL installed:
+
+```powershell
+.\install.ps1 -Force
+wsly <command>
+```
+
 ## Design
 
 The launcher is intentionally one file and has no dependencies beyond WSL.

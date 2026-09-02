@@ -8,6 +8,14 @@ permissions:
   contents: read
 
 jobs:
+  bash-helper:
+    name: Bash helper contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test interactive-shell helper behavior
+        run: bash tests/test-wsly-bash.sh
+
   powershell-parse:
     name: PowerShell parse check
     runs-on: windows-latest
