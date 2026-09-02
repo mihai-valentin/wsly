@@ -1,0 +1,19 @@
+name: Question or support request
+description: Ask for help using wsly
+title: "question: "
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Explain what you are trying to do.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Environment and command
+      description: Include Windows/WSL versions, the command, and relevant redacted output.
+    validations:
+      required: true

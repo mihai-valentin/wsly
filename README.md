@@ -101,6 +101,16 @@ but safely forwards the original argument vector. Interactive Bash sources
 requested command fails, `wsly` returns its exit code instead of opening a new
 shell.
 
+## Contributing
+
+Contributions from humans and coding agents are welcome. Agent-assisted pull
+requests are held to the same standard as every other contribution: the person
+opening the pull request is responsible for understanding it, testing it, and
+responding to review feedback.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, then follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
 [MIT](LICENSE)
