@@ -1,5 +1,7 @@
 # wsly
 
+[![100% created with Codex](https://img.shields.io/badge/100%25%20created%20with-Codex-412991)](https://openai.com/codex/)
+
 `wsly` runs a command inside an **interactive** WSL Bash session, then leaves
 that session open when the command succeeds.
 
