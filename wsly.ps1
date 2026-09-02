@@ -75,8 +75,11 @@ if ($Command.Count -eq 0) {
 # Bash receives the original command words as "$@".  Do not concatenate them
 # into the script: that would reinterpret spaces and shell metacharacters.
 $bashProgram = @'
-"$@" || exit $?
-exec "${SHELL:-bash}" -i
+if "$@"; then
+    exec "${SHELL:-bash}" -i
+else
+    exit
+fi
 '@
 
 & $wslPath '--' 'bash' '-ic' $bashProgram 'wsly' @Command
