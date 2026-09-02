@@ -95,8 +95,8 @@ wsl.exe -- bash -ic '<command>; exec bash -i'
 
 but safely forwards the original argument vector. Interactive Bash sources
 `~/.bashrc`, allowing configured shell functions to be resolved. If the
-requested command fails, `wsly` returns its exit code instead of opening a new
-shell.
+requested command fails, `wsly` returns that exit code instead of opening a
+new shell.
 
 ## Contributing
 

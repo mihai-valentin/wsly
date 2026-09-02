@@ -75,11 +75,7 @@ if ($Command.Count -eq 0) {
 # Bash receives the original command words as "$@".  Do not concatenate them
 # into the script: that would reinterpret spaces and shell metacharacters.
 $bashProgram = @'
-"$@"
-status=$?
-if [ "$status" -ne 0 ]; then
-    exit "$status"
-fi
+"$@" || exit $?
 exec "${SHELL:-bash}" -i
 '@
 
