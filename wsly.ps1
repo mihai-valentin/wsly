@@ -93,7 +93,11 @@ function Resolve-WslyBashHelper {
         }
     }
 
-    $linuxPath = & $LauncherPath '--' 'wslpath' '-u' $helperPath
+    # WSL parses backslashes in native-command arguments as escapes. Forward
+    # slashes keep a Windows path intact (for example, C:/Users/...); wslpath
+    # accepts that spelling and still respects the distro's mount settings.
+    $wslCompatibleWindowsPath = $helperPath.Replace('\', '/')
+    $linuxPath = & $LauncherPath '--' 'wslpath' '-u' $wslCompatibleWindowsPath
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($linuxPath)) {
         throw "wsly could not translate its helper path for WSL: $helperPath"
     }
