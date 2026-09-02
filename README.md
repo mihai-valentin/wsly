@@ -62,7 +62,7 @@ override before calling `wsly`:
 
 ```powershell
 $env:WSLY_WSL_EXE = 'D:\Tools\wsl.exe'
-wsly cdp nexus
+wsly project-jump api
 ```
 
 The override may also be the name of an application already on `PATH`.
