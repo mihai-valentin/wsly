@@ -1,9 +1,9 @@
 # wsly.ps1 — run a command through an interactive WSL Bash session.
 #
-# cdp is a shell function, so `wsl cdp <project>` cannot find it: WSL runs
-# that command without loading the interactive shell configuration.  wsly
-# starts interactive Bash, runs the requested command, then keeps that shell
-# open on success so a command such as `wsly cdp nexus` is useful as a jump.
+# Interactive-shell functions are not available to `wsl <command>`, because
+# WSL runs that command without loading the interactive shell configuration.
+# wsly starts interactive Bash, runs the requested command, then keeps that
+# shell open on success.
 
 [CmdletBinding()]
 param(

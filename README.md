@@ -5,31 +5,28 @@
 `wsly` runs a command inside an **interactive** WSL Bash session, then leaves
 that session open when the command succeeds.
 
-It exists for shell functions such as `cdp`. A direct call
-does not load interactive Bash startup files, so this fails:
+It exists for commands and shell functions that are configured only by an
+interactive Bash startup file. A direct call does not load that configuration,
+so this fails when `project-jump` is a shell function:
 
 ```powershell
-wsl cdp nexus
-# /bin/bash: line 1: cdp: command not found
+wsl project-jump api
+# /bin/bash: line 1: project-jump: command not found
 ```
 
 After installing `wsly`, this both loads the shell function and leaves you in
 the selected project:
 
 ```powershell
-wsly cdp nexus
+wsly project-jump api
 ```
 
 ## Prerequisites
 
 - WSL installed and available as `wsl.exe`
 - Bash configured for the target distro
-- The command available from interactive Bash. For `cdp`, put this in
-  `~/.bashrc`:
-
-  ```bash
-  eval "$(~/.local/bin/cdp init bash)"
-  ```
+- The command or shell function available from interactive Bash. Add its setup
+  to `~/.bashrc`.
 
 ## Install
 
@@ -73,8 +70,8 @@ The override may also be the name of an application already on `PATH`.
 ## Usage
 
 ```powershell
-wsly cdp nexus
-wsly cdp client-api deploy
+wsly project-jump api
+wsly project-jump api deploy
 wsly git status
 ```
 
@@ -97,7 +94,7 @@ wsl.exe -- bash -ic '<command>; exec bash -i'
 ```
 
 but safely forwards the original argument vector. Interactive Bash sources
-`~/.bashrc`, allowing shell functions such as `cdp` to be resolved. If the
+`~/.bashrc`, allowing configured shell functions to be resolved. If the
 requested command fails, `wsly` returns its exit code instead of opening a new
 shell.
 

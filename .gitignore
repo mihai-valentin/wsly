@@ -3,10 +3,5 @@
 *.suo
 .vs/
 
-# Local workspace metadata — never publish these.
-CLAUDE.md
-idea.md
-.agent-orch/
-.claude/
 .env
 .env.*

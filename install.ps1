@@ -31,4 +31,4 @@ if (($env:Path -split ';') -notcontains $destinationDirectory) {
 }
 
 Write-Host "Installed wsly to $destination"
-Write-Host 'Open a new PowerShell window, then run: wsly cdp nexus'
+Write-Host 'Open a new PowerShell window, then run: wsly <command>'
