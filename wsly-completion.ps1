@@ -15,19 +15,19 @@ if (Test-Path -LiteralPath $script:WslyLauncher -PathType Leaf) {
     function global:wsly {
         [CmdletBinding()]
         param(
+            [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+            [string[]]$Command,
+
             [string]$Distro,
 
             [Alias('n')]
             [switch]$NoShell,
 
-            [Alias('v')]
-            [switch]$Version,
-
-            [Parameter(ValueFromRemainingArguments = $true)]
-            [string[]]$Command
+            [Alias('Version', 'v')]
+            [switch]$ShowVersion
         )
 
-        Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -Version:$Version
+        Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -ShowVersion:$ShowVersion
     }
 }
 

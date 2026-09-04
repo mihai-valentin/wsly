@@ -20,7 +20,7 @@ $env:WSLY_MOCK_ARGS = $argumentLog
 . (Join-Path $testInstall 'wsly.ps1')
 
 $expectedVersion = (Get-Content -LiteralPath (Join-Path $testInstall 'VERSION') -Raw).Trim()
-$reportedVersion = Invoke-Wsly -Version:$true
+$reportedVersion = Invoke-Wsly -ShowVersion:$true
 if ($reportedVersion -ne "wsly $expectedVersion") {
     throw "Unexpected version output: $reportedVersion"
 }

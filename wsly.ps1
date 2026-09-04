@@ -7,16 +7,16 @@
 
 [CmdletBinding()]
 param(
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+    [string[]]$Command,
+
     [string]$Distro,
 
     [Alias('n')]
     [switch]$NoShell,
 
-    [Alias('v')]
-    [switch]$Version,
-
-    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
-    [string[]]$Command
+    [Alias('Version', 'v')]
+    [switch]$ShowVersion
 )
 
 $versionPath = Join-Path $PSScriptRoot 'VERSION'
@@ -138,25 +138,32 @@ function Invoke-Wsly {
 
         [switch]$NoShell,
 
-        [switch]$Version
+        [switch]$ShowVersion
     )
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
+    if ($null -eq $Command) {
+        $commandWords = $null
+        $commandWordCount = 0
+    } else {
+        $commandWords = @($Command)
+        $commandWordCount = $commandWords.Count
+    }
 
-    if ($Version -or ($Command.Count -eq 1 -and $Command[0] -in '--version', '-v')) {
+    if ($ShowVersion -or ($commandWordCount -eq 1 -and $commandWords[0] -in '--version', '-v')) {
         Write-Output "wsly $script:WslyVersion"
         $script:WslyExitCode = 0
         return
     }
 
-    if ($NoShell -and $Command.Count -eq 0) {
+    if ($NoShell -and $commandWordCount -eq 0) {
         throw 'wsly -NoShell requires a command.'
     }
 
     $wslPath = Resolve-WslyWslExecutable
 
-    if ($Command.Count -eq 0) {
+    if ($commandWordCount -eq 0) {
         & $wslPath
         $script:WslyExitCode = $LASTEXITCODE
         return
@@ -173,7 +180,7 @@ function Invoke-Wsly {
         $wslArguments += '--wsly-hold'
     }
 
-    & $wslPath @wslArguments @Command
+    & $wslPath @wslArguments @commandWords
     $script:WslyExitCode = $LASTEXITCODE
 }
 
@@ -183,5 +190,5 @@ if ($MyInvocation.InvocationName -eq '.') {
     return
 }
 
-Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -Version:$Version
+Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -ShowVersion:$ShowVersion
 exit $script:WslyExitCode
