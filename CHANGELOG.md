@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+
+- Fix automated release packaging of the Inno Setup installer on GitHub Actions.
+
 ## 1.1.1
 
 - Add a per-user Inno Setup installer and checksummed setup EXE release asset

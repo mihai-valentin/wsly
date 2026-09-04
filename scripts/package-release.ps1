@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim()
 $packageName = "wsly-$version"
 $packageDirectory = Join-Path $OutputDirectory $packageName
@@ -60,7 +61,9 @@ if ($null -eq $iscc) {
 }
 
 $innoStaging = Join-Path $env:TEMP ("wsly-inno-" + [guid]::NewGuid())
+$innoOutput = Join-Path $env:TEMP ("wsly-inno-output-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $innoStaging | Out-Null
+New-Item -ItemType Directory -Path $innoOutput | Out-Null
 try {
     Copy-Item -LiteralPath @(
         (Join-Path $repoRoot 'VERSION'),
@@ -72,13 +75,15 @@ try {
 
     # ISCC does not support a WSL UNC path as its source directory. Staging
     # also makes the local release build work from a WSL checkout.
-    & $iscc.Path "/DAppVersion=$version" "/DSourceDir=$innoStaging" "/DOutputDir=$OutputDirectory" (Join-Path $innoStaging 'wsly.iss')
+    & $iscc.Path "/DAppVersion=$version" "/DSourceDir=$innoStaging" "/DOutputDir=$innoOutput" (Join-Path $innoStaging 'wsly.iss')
     if ($LASTEXITCODE -ne 0) {
         throw "Inno Setup build failed with exit code $LASTEXITCODE."
     }
+    Copy-Item -LiteralPath (Join-Path $innoOutput "$packageName-setup.exe") -Destination $setup
 }
 finally {
     Remove-Item -LiteralPath $innoStaging -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $innoOutput -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
