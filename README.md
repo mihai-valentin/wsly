@@ -48,6 +48,24 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1 -Force
 ```
 
+To install without adding the completion bridge to your PowerShell profile:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install.ps1 -NoCompletion
+```
+
+## Uninstall
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\uninstall.ps1
+```
+
+The uninstaller removes wsly's files, PATH entry, and only the profile line
+marked as wsly's completion integration. Use `-KeepPath` or
+`-KeepCompletionProfileEntry` to preserve either setting.
+
 ## WSL launcher discovery
 
 `wsly` chooses the WSL launcher at runtime; it does not embed a machine-specific
@@ -95,6 +113,13 @@ wsly -NoShell git status
 This mode streams the command's output and returns its exit code, but does not
 open the successful command's follow-on WSL shell.
 
+When you have more than one WSL distro, select the target explicitly:
+
+```powershell
+wsly -Distro Ubuntu cdp ls
+wsly -Distro Debian -n git status
+```
+
 Arguments are passed as individual command words, rather than assembled into a
 shell string. Quote an argument in PowerShell when it contains spaces.
 
@@ -122,6 +147,21 @@ Each Tab press starts WSL to obtain candidates, so it is naturally slower than
 completion inside an already-running WSL shell. Completion definitions that
 depend on an interactive terminal, terminal UI, or Bash readline internals may
 not be portable through the bridge.
+
+## Troubleshooting
+
+- **`wsly` is not recognized:** open a new PowerShell window after installing,
+  then run `Get-Command wsly`. Confirm `%LOCALAPPDATA%\wsly\bin` is on your
+  user `PATH`.
+- **A Bash function is missing:** place its setup in `~/.bashrc`; wsly sources
+  that file before it runs your command.
+- **The wrong distro opens:** pass `-Distro <name>` and verify available names
+  with `wsl --list --verbose`.
+- **Tab completes files instead of Bash options:** reinstall with
+  `Set-ExecutionPolicy -Scope Process Bypass; .\install.ps1 -Force`, open a
+  new PowerShell window, then confirm `Get-Command wsly` reports `Function`.
+- **An unusual WSL installation is not found:** set `WSLY_WSL_EXE` to a
+  compatible launcher path for the current PowerShell session.
 
 ## Testing
 

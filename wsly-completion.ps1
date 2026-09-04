@@ -15,6 +15,8 @@ if (Test-Path -LiteralPath $script:WslyLauncher -PathType Leaf) {
     function global:wsly {
         [CmdletBinding()]
         param(
+            [string]$Distro,
+
             [Alias('n')]
             [switch]$NoShell,
 
@@ -25,7 +27,7 @@ if (Test-Path -LiteralPath $script:WslyLauncher -PathType Leaf) {
             [string[]]$Command
         )
 
-        Invoke-Wsly -Command $Command -NoShell:$NoShell -Version:$Version
+        Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -Version:$Version
     }
 }
 
@@ -64,7 +66,9 @@ function Get-WslyCompletionLauncher {
 function Get-WslyCompletionHelperPath {
     param(
         [Parameter(Mandatory)]
-        [string]$LauncherPath
+        [string]$LauncherPath,
+
+        [string]$Distro
     )
 
     if (-not (Test-Path -LiteralPath $script:WslyCompletionHelper -PathType Leaf)) {
@@ -77,6 +81,9 @@ function Get-WslyCompletionHelperPath {
         [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
     )
     if ($uncMatch.Success) {
+        if (-not [string]::IsNullOrWhiteSpace($Distro) -and $Distro -ne $uncMatch.Groups['distro'].Value) {
+            return $null
+        }
         return [pscustomobject]@{
             Distro = $uncMatch.Groups['distro'].Value
             Path = '/' + $uncMatch.Groups['linuxPath'].Value.Replace('\', '/')
@@ -84,12 +91,16 @@ function Get-WslyCompletionHelperPath {
     }
 
     $windowsPath = $script:WslyCompletionHelper.Replace('\', '/')
-    $linuxPath = & $LauncherPath '--' 'wslpath' '-u' $windowsPath 2>$null
+    $pathArguments = @()
+    if (-not [string]::IsNullOrWhiteSpace($Distro)) {
+        $pathArguments += '-d', $Distro
+    }
+    $linuxPath = & $LauncherPath @pathArguments '--' 'wslpath' '-u' $windowsPath 2>$null
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($linuxPath)) {
         return $null
     }
 
-    return [pscustomobject]@{ Distro = $null; Path = $linuxPath.Trim() }
+    return [pscustomobject]@{ Distro = $Distro; Path = $linuxPath.Trim() }
 }
 
 function ConvertTo-WslyCompletionText {
@@ -106,7 +117,8 @@ function Get-WslyCompletionResults {
         [AllowNull()]
         [string]$WordToComplete,
         [Parameter(Mandatory)]
-        $CommandAst
+        $CommandAst,
+        [string]$Distro
     )
 
     $launcher = Get-WslyCompletionLauncher
@@ -114,7 +126,7 @@ function Get-WslyCompletionResults {
         return
     }
 
-    $helper = Get-WslyCompletionHelperPath -LauncherPath $launcher
+    $helper = Get-WslyCompletionHelperPath -LauncherPath $launcher -Distro $Distro
     if ($null -eq $helper) {
         return
     }
@@ -128,8 +140,17 @@ function Get-WslyCompletionResults {
     )
     $words = @()
     $readingLauncherOptions = $true
+    $skipNextWord = $false
     foreach ($word in $rawWords) {
+        if ($skipNextWord) {
+            $skipNextWord = $false
+            continue
+        }
         if ($readingLauncherOptions -and $word -in '-n', '-NoShell', '-v', '-Version', '--version') {
+            continue
+        }
+        if ($readingLauncherOptions -and $word -in '-Distro', '-d') {
+            $skipNextWord = $true
             continue
         }
         $readingLauncherOptions = $false
@@ -193,7 +214,7 @@ function Get-WslyCompletionResults {
 Register-ArgumentCompleter -CommandName wsly, 'wsly.ps1' -ParameterName Command -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    Get-WslyCompletionResults -WordToComplete $wordToComplete -CommandAst $commandAst
+    Get-WslyCompletionResults -WordToComplete $wordToComplete -CommandAst $commandAst -Distro $fakeBoundParameters['Distro']
 }
 
 Register-ArgumentCompleter -Native -CommandName wsly, 'wsly.ps1' -ScriptBlock {

@@ -7,6 +7,8 @@
 
 [CmdletBinding()]
 param(
+    [string]$Distro,
+
     [Alias('n')]
     [switch]$NoShell,
 
@@ -17,7 +19,11 @@ param(
     [string[]]$Command
 )
 
-$script:WslyVersion = '1.0.3'
+$versionPath = Join-Path $PSScriptRoot 'VERSION'
+if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) {
+    throw "wsly version file is missing: $versionPath. Reinstall wsly to repair the installation."
+}
+$script:WslyVersion = (Get-Content -LiteralPath $versionPath -Raw).Trim()
 
 function Resolve-WslyWslExecutable {
     <#
@@ -74,7 +80,9 @@ function Resolve-WslyBashHelper {
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)]
-        [string]$LauncherPath
+        [string]$LauncherPath,
+
+        [string]$Distro
     )
 
     $helperPath = Join-Path $PSScriptRoot 'wsly.bash'
@@ -90,6 +98,9 @@ function Resolve-WslyBashHelper {
         [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
     )
     if ($uncMatch.Success) {
+        if (-not [string]::IsNullOrWhiteSpace($Distro) -and $Distro -ne $uncMatch.Groups['distro'].Value) {
+            throw "The wsly helper is in WSL distro '$($uncMatch.Groups['distro'].Value)', not requested distro '$Distro'. Install wsly from Windows or omit -Distro."
+        }
         return [pscustomobject]@{
             Distro = $uncMatch.Groups['distro'].Value
             Path = '/' + $uncMatch.Groups['linuxPath'].Value.Replace('\', '/')
@@ -100,13 +111,17 @@ function Resolve-WslyBashHelper {
     # slashes keep a Windows path intact (for example, C:/Users/...); wslpath
     # accepts that spelling and still respects the distro's mount settings.
     $wslCompatibleWindowsPath = $helperPath.Replace('\', '/')
-    $linuxPath = & $LauncherPath '--' 'wslpath' '-u' $wslCompatibleWindowsPath
+    $pathArguments = @()
+    if (-not [string]::IsNullOrWhiteSpace($Distro)) {
+        $pathArguments += '-d', $Distro
+    }
+    $linuxPath = & $LauncherPath @pathArguments '--' 'wslpath' '-u' $wslCompatibleWindowsPath
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($linuxPath)) {
         throw "wsly could not translate its helper path for WSL: $helperPath"
     }
 
     return [pscustomobject]@{
-        Distro = $null
+        Distro = $Distro
         Path = $linuxPath.Trim()
     }
 }
@@ -118,6 +133,8 @@ function Invoke-Wsly {
     [CmdletBinding()]
     param(
         [string[]]$Command,
+
+        [string]$Distro,
 
         [switch]$NoShell,
 
@@ -145,7 +162,7 @@ function Invoke-Wsly {
         return
     }
 
-    $bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath
+    $bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath -Distro $Distro
     $wslArguments = @()
     if ($null -ne $bashHelper.Distro) {
         $wslArguments += '-d', $bashHelper.Distro
@@ -166,5 +183,5 @@ if ($MyInvocation.InvocationName -eq '.') {
     return
 }
 
-Invoke-Wsly -Command $Command -NoShell:$NoShell -Version:$Version
+Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -Version:$Version
 exit $script:WslyExitCode
