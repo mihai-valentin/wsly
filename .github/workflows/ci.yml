@@ -26,12 +26,16 @@ jobs:
         run: |
           $tokens = $null
           $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "${{ github.workspace }}\wsly.ps1",
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | Format-List | Out-String | Write-Error
-            exit 1
+          @('wsly.ps1', 'wsly-completion.ps1', 'install.ps1') | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path '${{ github.workspace }}' $_),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
           }

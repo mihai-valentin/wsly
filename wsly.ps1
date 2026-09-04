@@ -11,9 +11,6 @@ param(
     [string[]]$Command
 )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-
 function Resolve-WslyWslExecutable {
     <#
     .SYNOPSIS
@@ -65,8 +62,6 @@ WSLY_WSL_EXE to the full path of a compatible launcher for this session.
 "@
 }
 
-$wslPath = Resolve-WslyWslExecutable
-
 function Resolve-WslyBashHelper {
     [OutputType([pscustomobject])]
     param(
@@ -108,18 +103,43 @@ function Resolve-WslyBashHelper {
     }
 }
 
-if ($Command.Count -eq 0) {
-    & $wslPath
-    exit $LASTEXITCODE
+# Kept as a function so the PowerShell profile completion bridge can expose a
+# `wsly` function. A function has reliable argument-completer registration;
+# invoking the .ps1 file directly continues to work exactly as before.
+function Invoke-Wsly {
+    [CmdletBinding()]
+    param(
+        [string[]]$Command
+    )
+
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = 'Stop'
+
+    $wslPath = Resolve-WslyWslExecutable
+
+    if ($Command.Count -eq 0) {
+        & $wslPath
+        $script:WslyExitCode = $LASTEXITCODE
+        return
+    }
+
+    $bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath
+    $wslArguments = @()
+    if ($null -ne $bashHelper.Distro) {
+        $wslArguments += '-d', $bashHelper.Distro
+    }
+
+    $wslArguments += '--', 'bash', '-i', $bashHelper.Path
+
+    & $wslPath @wslArguments @Command
+    $script:WslyExitCode = $LASTEXITCODE
 }
 
-$bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath
-$wslArguments = @()
-if ($null -ne $bashHelper.Distro) {
-    $wslArguments += '-d', $bashHelper.Distro
+# Dot-sourcing makes Invoke-Wsly available to the profile proxy without
+# launching WSL while PowerShell is starting up.
+if ($MyInvocation.InvocationName -eq '.') {
+    return
 }
 
-$wslArguments += '--', 'bash', '-i', $bashHelper.Path
-
-& $wslPath @wslArguments @Command
-exit $LASTEXITCODE
+Invoke-Wsly -Command $Command
+exit $script:WslyExitCode

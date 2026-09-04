@@ -84,6 +84,27 @@ shell string. Quote an argument in PowerShell when it contains spaces.
 separate processes; instead, it opens a WSL shell whose directory was changed
 by the command.
 
+### Tab completion
+
+The installer adds a small `wsly` completion bridge to your PowerShell profile.
+It exposes `wsly` as a PowerShell function and, after opening a new PowerShell
+window, pressing Tab after `wsly cdp ` asks WSL to run the Bash completion
+registered for `cdp`. Its configured choices are then offered by PowerShell.
+It works with Bash completion functions defined or loaded by `~/.bashrc`.
+
+Run `install.ps1 -Force` to add completion to an existing installation. By
+default, PowerShell cycles candidates when you press Tab. To display its
+completion menu instead, add this to your PowerShell profile:
+
+```powershell
+Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+```
+
+Each Tab press starts WSL to obtain candidates, so it is naturally slower than
+completion inside an already-running WSL shell. Completion definitions that
+depend on an interactive terminal, terminal UI, or Bash readline internals may
+not be portable through the bridge.
+
 ## Testing
 
 The repository's CI parses the PowerShell launcher on Windows and runs
