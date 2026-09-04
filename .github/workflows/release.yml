@@ -10,27 +10,42 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Verify tag matches VERSION
-        run: test "${GITHUB_REF_NAME}" = "$(tr -d '\r\n' < VERSION)"
-      - name: Package release archive and checksum
-        run: ./scripts/package-release.sh .
-      - name: Extract concise release notes
-        env:
-          VERSION: ${{ github.ref_name }}
+        shell: pwsh
         run: |
-          awk -v heading="## ${VERSION}" \
-            '$0 == heading { printing = 1; next } printing && /^## / { exit } printing { print }' \
-            CHANGELOG.md > release-notes.md
-          test -s release-notes.md
+          if ($env:GITHUB_REF_NAME -ne (Get-Content VERSION -Raw).Trim()) {
+            throw 'Tag does not match VERSION.'
+          }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+      - name: Package release archive and checksum
+        shell: pwsh
+        run: .\scripts\package-release.ps1 -OutputDirectory .
+      - name: Extract concise release notes
+        shell: pwsh
+        run: |
+          $heading = "## $env:GITHUB_REF_NAME"
+          $writing = $false
+          $notes = foreach ($line in Get-Content CHANGELOG.md) {
+            if ($line -eq $heading) { $writing = $true; continue }
+            if ($writing -and $line -match '^## ') { break }
+            if ($writing) { $line }
+          }
+          if ($notes.Count -eq 0) { throw "No changelog notes found for $env:GITHUB_REF_NAME." }
+          Set-Content -LiteralPath release-notes.md -Value $notes
       - name: Create GitHub release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "wsly $GITHUB_REF_NAME" \
-            --notes-file release-notes.md \
-            "wsly-${GITHUB_REF_NAME}.zip" \
-            "wsly-${GITHUB_REF_NAME}.zip.sha256"
+          gh release create $env:GITHUB_REF_NAME `
+            --title "wsly $env:GITHUB_REF_NAME" `
+            --notes-file release-notes.md `
+            "wsly-$env:GITHUB_REF_NAME.zip" `
+            "wsly-$env:GITHUB_REF_NAME.zip.sha256" `
+            "wsly-$env:GITHUB_REF_NAME-setup.exe" `
+            "wsly-$env:GITHUB_REF_NAME-setup.exe.sha256"

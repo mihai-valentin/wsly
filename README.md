@@ -44,28 +44,30 @@ install.
 
 ### Release archive
 
-Each tagged release includes `wsly-<version>.zip` and a matching
-`wsly-<version>.zip.sha256` checksum. Download both from the GitHub Release,
-then verify the archive before extracting it:
+Each tagged release includes a portable `wsly-<version>.zip`, a per-user
+`wsly-<version>-setup.exe` installer, and a SHA-256 checksum for each asset.
+Download an asset and its matching `.sha256` file from the GitHub Release, then
+verify it before opening or extracting it:
 
 ```powershell
-Get-FileHash .\wsly-<version>.zip -Algorithm SHA256
-Get-Content .\wsly-<version>.zip.sha256
+Get-FileHash .\wsly-<version>-setup.exe -Algorithm SHA256
+Get-Content .\wsly-<version>-setup.exe.sha256
 ```
 
-The two hashes must match. Extract the archive, open PowerShell in the
-extracted `wsly-<version>` directory, then run the installation commands
-above.
+The two hashes must match. Run the verified setup EXE for a standard install,
+or extract the ZIP, open PowerShell in the extracted `wsly-<version>`
+directory, then run the installation commands above.
 
 To build and verify the same archive locally before publishing a tag, run from
 WSL or another Bash environment:
 
 ```bash
-bash scripts/package-release.sh
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1
 ```
 
-It writes the archive and checksum to `dist/` and refuses to overwrite an
-existing release build.
+It writes both distributable assets and checksums to `dist/` and refuses to
+overwrite an existing release build. The Bash packager remains available for
+building only the portable ZIP on Linux.
 
 To replace an existing install:
 

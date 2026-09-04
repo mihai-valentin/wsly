@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Add a per-user Inno Setup installer and checksummed setup EXE release asset
+  for future Windows Package Manager distribution.
+
 ## 1.1.0
 
 - Add PowerShell Tab completion for commands and functions configured by
