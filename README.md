@@ -44,6 +44,7 @@ install.
 To replace an existing install:
 
 ```powershell
+Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1 -Force
 ```
 
