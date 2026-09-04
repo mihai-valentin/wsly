@@ -32,6 +32,12 @@ if ($arguments -notmatch '-d TestDistro' -or $arguments -notmatch '--wsly-hold')
 }
 
 . (Join-Path $testInstall 'wsly-completion.ps1')
+wsly -n printf 'hello' | Out-Null
+$arguments = Get-Content -LiteralPath $argumentLog -Raw
+if ($arguments -match '(^|\s)-d\s+--') {
+    throw "The PowerShell proxy forwarded an empty distro name: $arguments"
+}
+
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseInput('wsly cdp nex', [ref]$tokens, [ref]$errors)

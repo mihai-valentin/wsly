@@ -171,7 +171,7 @@ function Invoke-Wsly {
 
     $bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath -Distro $Distro
     $wslArguments = @()
-    if ($null -ne $bashHelper.Distro) {
+    if (-not [string]::IsNullOrWhiteSpace($bashHelper.Distro)) {
         $wslArguments += '-d', $bashHelper.Distro
     }
 

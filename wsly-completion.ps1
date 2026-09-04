@@ -188,7 +188,7 @@ function Get-WslyCompletionResults {
     }
 
     $arguments = @()
-    if ($null -ne $helper.Distro) {
+    if (-not [string]::IsNullOrWhiteSpace($helper.Distro)) {
         $arguments += '-d', $helper.Distro
     }
     $arguments += '--', 'bash', '-i', $helper.Path, '--complete'
