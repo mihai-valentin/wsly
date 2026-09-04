@@ -77,6 +77,23 @@ wsly git status
 
 With no arguments, `wsly` behaves like `wsl` and opens your default WSL shell.
 
+Print the installed launcher version with:
+
+```powershell
+wsly --version
+```
+
+To run a command with your interactive Bash configuration but remain in
+PowerShell when it finishes, use `-NoShell` (or its short form, `-n`):
+
+```powershell
+wsly -n cdp ls
+wsly -NoShell git status
+```
+
+This mode streams the command's output and returns its exit code, but does not
+open the successful command's follow-on WSL shell.
+
 Arguments are passed as individual command words, rather than assembled into a
 shell string. Quote an argument in PowerShell when it contains spaces.
 

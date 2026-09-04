@@ -15,11 +15,17 @@ if (Test-Path -LiteralPath $script:WslyLauncher -PathType Leaf) {
     function global:wsly {
         [CmdletBinding()]
         param(
+            [Alias('n')]
+            [switch]$NoShell,
+
+            [Alias('v')]
+            [switch]$Version,
+
             [Parameter(ValueFromRemainingArguments = $true)]
             [string[]]$Command
         )
 
-        Invoke-Wsly -Command $Command
+        Invoke-Wsly -Command $Command -NoShell:$NoShell -Version:$Version
     }
 }
 
@@ -113,13 +119,22 @@ function Get-WslyCompletionResults {
         return
     }
 
-    $words = @(
+    $rawWords = @(
         $commandAst.CommandElements |
             Select-Object -Skip 1 |
             ForEach-Object {
                 if ($null -ne $_.PSObject.Properties['Value']) { [string]$_.Value } else { $_.Extent.Text }
             }
     )
+    $words = @()
+    $readingLauncherOptions = $true
+    foreach ($word in $rawWords) {
+        if ($readingLauncherOptions -and $word -in '-n', '-NoShell', '-v', '-Version', '--version') {
+            continue
+        }
+        $readingLauncherOptions = $false
+        $words += $word
+    }
     # For script commands PowerShell can report the prior argument as
     # $wordToComplete after `wsly cdp <Tab>`. CommandAst excludes trailing
     # whitespace, so use PSReadLine's live buffer when it is available to

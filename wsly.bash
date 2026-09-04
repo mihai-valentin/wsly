@@ -51,7 +51,16 @@ if [ "${1-}" = "--complete" ]; then
     exit 0
 fi
 
+hold=0
+if [ "${1-}" = "--wsly-hold" ]; then
+    hold=1
+    shift
+fi
+
 if "$@"; then
+    if [ "${hold}" -eq 1 ]; then
+        exit 0
+    fi
     exec "${SHELL:-bash}" -i
 else
     exit

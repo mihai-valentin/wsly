@@ -7,9 +7,17 @@
 
 [CmdletBinding()]
 param(
+    [Alias('n')]
+    [switch]$NoShell,
+
+    [Alias('v')]
+    [switch]$Version,
+
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$Command
 )
+
+$script:WslyVersion = '1.0.3'
 
 function Resolve-WslyWslExecutable {
     <#
@@ -109,11 +117,25 @@ function Resolve-WslyBashHelper {
 function Invoke-Wsly {
     [CmdletBinding()]
     param(
-        [string[]]$Command
+        [string[]]$Command,
+
+        [switch]$NoShell,
+
+        [switch]$Version
     )
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
+
+    if ($Version -or ($Command.Count -eq 1 -and $Command[0] -in '--version', '-v')) {
+        Write-Output "wsly $script:WslyVersion"
+        $script:WslyExitCode = 0
+        return
+    }
+
+    if ($NoShell -and $Command.Count -eq 0) {
+        throw 'wsly -NoShell requires a command.'
+    }
 
     $wslPath = Resolve-WslyWslExecutable
 
@@ -130,6 +152,9 @@ function Invoke-Wsly {
     }
 
     $wslArguments += '--', 'bash', '-i', $bashHelper.Path
+    if ($NoShell) {
+        $wslArguments += '--wsly-hold'
+    }
 
     & $wslPath @wslArguments @Command
     $script:WslyExitCode = $LASTEXITCODE
@@ -141,5 +166,5 @@ if ($MyInvocation.InvocationName -eq '.') {
     return
 }
 
-Invoke-Wsly -Command $Command
+Invoke-Wsly -Command $Command -NoShell:$NoShell -Version:$Version
 exit $script:WslyExitCode

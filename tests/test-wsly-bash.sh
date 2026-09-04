@@ -45,6 +45,13 @@ test -f "${shell_marker}"
 test "$(<"${shell_marker}")" = "${workspace}"
 
 rm -f "${shell_marker}"
+HOME="${test_home}" \
+SHELL="${fake_shell}" \
+WSLY_TEST_MARKER="${shell_marker}" \
+WSLY_TEST_WORKSPACE="${workspace}" \
+bash --noprofile -i "${helper}" --wsly-hold project_jump demo
+test ! -e "${shell_marker}"
+
 set +e
 HOME="${test_home}" \
 SHELL="${fake_shell}" \
