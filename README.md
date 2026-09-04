@@ -24,7 +24,8 @@ wsly project-jump api
 ## Prerequisites
 
 - WSL installed and available as `wsl.exe`
-- Bash configured for the target distro
+- A user-facing Linux distro with Bash installed and configured. Internal WSL
+  distros such as `docker-desktop` do not include Bash and are not supported.
 - The command or shell function available from interactive Bash. Add its setup
   to `~/.bashrc`.
 
@@ -40,6 +41,31 @@ Set-ExecutionPolicy -Scope Process Bypass
 The installer copies `wsly.ps1` to `%LOCALAPPDATA%\wsly\bin` and adds that
 directory to the current user's `PATH`. Open a new PowerShell window after the
 install.
+
+### Release archive
+
+Each tagged release includes `wsly-<version>.zip` and a matching
+`wsly-<version>.zip.sha256` checksum. Download both from the GitHub Release,
+then verify the archive before extracting it:
+
+```powershell
+Get-FileHash .\wsly-<version>.zip -Algorithm SHA256
+Get-Content .\wsly-<version>.zip.sha256
+```
+
+The two hashes must match. Extract the archive, open PowerShell in the
+extracted `wsly-<version>` directory, then run the installation commands
+above.
+
+To build and verify the same archive locally before publishing a tag, run from
+WSL or another Bash environment:
+
+```bash
+bash scripts/package-release.sh
+```
+
+It writes the archive and checksum to `dist/` and refuses to overwrite an
+existing release build.
 
 To replace an existing install:
 
@@ -155,8 +181,9 @@ not be portable through the bridge.
   user `PATH`.
 - **A Bash function is missing:** place its setup in `~/.bashrc`; wsly sources
   that file before it runs your command.
-- **The wrong distro opens:** pass `-Distro <name>` and verify available names
-  with `wsl --list --verbose`.
+- **The wrong distro opens, or Bash is not found:** pass `-Distro <name>` and
+  verify available names with `wsl --list --verbose`. Select a user-facing
+  Linux distro with Bash, not an internal distro such as `docker-desktop`.
 - **Tab completes files instead of Bash options:** reinstall with
   `Set-ExecutionPolicy -Scope Process Bypass; .\install.ps1 -Force`, open a
   new PowerShell window, then confirm `Get-Command wsly` reports `Function`.
