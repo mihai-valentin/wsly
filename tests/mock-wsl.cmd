@@ -1,5 +1,5 @@
 @echo off
-if not "%WSLY_MOCK_ARGS%"=="" echo %* > "%WSLY_MOCK_ARGS%"
+if not "%WSLY_MOCK_ARGS%"=="" echo %* >> "%WSLY_MOCK_ARGS%"
 echo %* | findstr /c:"wslpath" >nul
 if not errorlevel 1 (
   echo /tmp/wsly.bash

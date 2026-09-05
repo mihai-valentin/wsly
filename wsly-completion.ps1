@@ -6,6 +6,10 @@
 
 $script:WslyCompletionHelper = Join-Path $PSScriptRoot 'wsly.bash'
 $script:WslyLauncher = Join-Path $PSScriptRoot 'wsly.ps1'
+if ($null -eq (Get-Variable -Name WslyCompletionResultCache -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:WslyCompletionResultCache = @{}
+}
+$script:WslyCompletionCacheTtl = [TimeSpan]::FromSeconds(10)
 
 # A PowerShell function guarantees that Register-ArgumentCompleter is called
 # for `wsly`, instead of relying on host-specific completion behavior for a
@@ -24,10 +28,16 @@ if (Test-Path -LiteralPath $script:WslyLauncher -PathType Leaf) {
             [switch]$NoShell,
 
             [Alias('Version', 'v')]
-            [switch]$ShowVersion
+            [switch]$ShowVersion,
+
+            [Alias('t')]
+            [switch]$Timing,
+
+            [Alias('q')]
+            [switch]$Quiet
         )
 
-        Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -ShowVersion:$ShowVersion
+        Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -ShowVersion:$ShowVersion -Timing:$Timing -Quiet:$Quiet
     }
 }
 
@@ -90,17 +100,12 @@ function Get-WslyCompletionHelperPath {
         }
     }
 
-    $windowsPath = $script:WslyCompletionHelper.Replace('\', '/')
-    $pathArguments = @()
-    if (-not [string]::IsNullOrWhiteSpace($Distro)) {
-        $pathArguments += '-d', $Distro
+    try {
+        return Resolve-WslyBashHelper -LauncherPath $LauncherPath -Distro $Distro
     }
-    $linuxPath = & $LauncherPath @pathArguments '--' 'wslpath' '-u' $windowsPath 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($linuxPath)) {
+    catch {
         return $null
     }
-
-    return [pscustomobject]@{ Distro = $Distro; Path = $linuxPath.Trim() }
 }
 
 function ConvertTo-WslyCompletionText {
@@ -146,7 +151,7 @@ function Get-WslyCompletionResults {
             $skipNextWord = $false
             continue
         }
-        if ($readingLauncherOptions -and $word -in '-n', '-NoShell', '-v', '-Version', '--version') {
+        if ($readingLauncherOptions -and $word -in '-n', '-NoShell', '-v', '-Version', '--version', '-t', '-Timing', '-q', '-Quiet') {
             continue
         }
         if ($readingLauncherOptions -and $word -in '-Distro', '-d') {
@@ -193,7 +198,31 @@ function Get-WslyCompletionResults {
     }
     $arguments += '--', 'bash', '-i', $helper.Path, '--complete'
 
-    & $launcher @arguments @words 2>$null |
+    # PowerShell can call an argument completer again for each Tab press. Keep
+    # an exact request's candidates briefly, so cycling the same choices does
+    # not repeatedly start WSL and interactive Bash. The helper path and distro
+    # form part of the key to keep WSL environments isolated.
+    $now = [DateTime]::UtcNow
+    foreach ($expiredKey in @($script:WslyCompletionResultCache.Keys)) {
+        if (($now - $script:WslyCompletionResultCache[$expiredKey].CreatedAt) -ge $script:WslyCompletionCacheTtl) {
+            $script:WslyCompletionResultCache.Remove($expiredKey)
+        }
+    }
+    $cacheSeparator = [string][char]0
+    $cacheKey = @([string]$helper.Distro, [string]$helper.Path, ($words -join $cacheSeparator)) -join $cacheSeparator
+    $cacheEntry = $script:WslyCompletionResultCache[$cacheKey]
+    if ($null -ne $cacheEntry -and ($now - $cacheEntry.CreatedAt) -lt $script:WslyCompletionCacheTtl) {
+        $candidates = @($cacheEntry.Candidates)
+    }
+    else {
+        $candidates = @(& $launcher @arguments @words 2>$null)
+        $script:WslyCompletionResultCache[$cacheKey] = [pscustomobject]@{
+            CreatedAt = $now
+            Candidates = $candidates
+        }
+    }
+
+    $candidates |
         Where-Object { $_ -like "$completionPrefix*" } |
         Sort-Object -Unique |
         ForEach-Object {

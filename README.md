@@ -141,6 +141,14 @@ wsly -NoShell git status
 This mode streams the command's output and returns its exit code, but does not
 open the successful command's follow-on WSL shell.
 
+To print a timing breakdown for helper-path resolution and WSL Bash execution,
+use `-Timing` (or `-t`). This is useful when diagnosing a slow WSL startup,
+shell configuration, or command:
+
+```powershell
+wsly -n -t cdp ls
+```
+
 When you have more than one WSL distro, select the target explicitly:
 
 ```powershell
@@ -154,6 +162,19 @@ shell string. Quote an argument in PowerShell when it contains spaces.
 `wsly` does not change PowerShell's working directory. Windows and WSL are
 separate processes; instead, it opens a WSL shell whose directory was changed
 by the command.
+
+For an ordinary interactive call, wsly immediately displays a short startup
+message while WSL and Bash are initializing. `-NoShell` stays silent so it can
+be used cleanly in scripts, and Tab completion never writes status text into
+its candidate list.
+
+To suppress wsly's startup message for an interactive call, use `-Quiet` (or
+`-q`). This does not suppress the command's output, errors, or `-Timing`
+results:
+
+```powershell
+wsly -q cdp nexus
+```
 
 ### Tab completion
 
@@ -171,8 +192,9 @@ completion menu instead, add this to your PowerShell profile:
 Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
 ```
 
-Each Tab press starts WSL to obtain candidates, so it is naturally slower than
-completion inside an already-running WSL shell. Completion definitions that
+The first Tab press for a distro starts WSL to obtain candidates; wsly caches
+its helper path for the rest of the PowerShell session and caches identical
+completion requests for 10 seconds. Completion definitions that
 depend on an interactive terminal, terminal UI, or Bash readline internals may
 not be portable through the bridge.
 

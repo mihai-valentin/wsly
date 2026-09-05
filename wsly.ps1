@@ -16,7 +16,13 @@ param(
     [switch]$NoShell,
 
     [Alias('Version', 'v')]
-    [switch]$ShowVersion
+    [switch]$ShowVersion,
+
+    [Alias('t')]
+    [switch]$Timing,
+
+    [Alias('q')]
+    [switch]$Quiet
 )
 
 $versionPath = Join-Path $PSScriptRoot 'VERSION'
@@ -24,6 +30,9 @@ if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) {
     throw "wsly version file is missing: $versionPath. Reinstall wsly to repair the installation."
 }
 $script:WslyVersion = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+if ($null -eq (Get-Variable -Name WslyBashHelperCache -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:WslyBashHelperCache = @{}
+}
 
 function Resolve-WslyWslExecutable {
     <#
@@ -90,6 +99,14 @@ function Resolve-WslyBashHelper {
         throw "wsly helper is missing: $helperPath. Reinstall wsly to repair the installation."
     }
 
+    # The completion bridge and Invoke-Wsly can share this script scope for the
+    # lifetime of a PowerShell session. Avoid starting WSL only to run wslpath
+    # for every command or every Tab press.
+    $cacheKey = '{0}|{1}|{2}' -f $LauncherPath, $Distro, $helperPath
+    if ($script:WslyBashHelperCache.ContainsKey($cacheKey)) {
+        return $script:WslyBashHelperCache[$cacheKey]
+    }
+
     # A checkout may be invoked through WSL's UNC provider. In that case use
     # its already-native Linux path and explicitly select that same distro.
     $uncMatch = [regex]::Match(
@@ -101,10 +118,12 @@ function Resolve-WslyBashHelper {
         if (-not [string]::IsNullOrWhiteSpace($Distro) -and $Distro -ne $uncMatch.Groups['distro'].Value) {
             throw "The wsly helper is in WSL distro '$($uncMatch.Groups['distro'].Value)', not requested distro '$Distro'. Install wsly from Windows or omit -Distro."
         }
-        return [pscustomobject]@{
+        $result = [pscustomobject]@{
             Distro = $uncMatch.Groups['distro'].Value
             Path = '/' + $uncMatch.Groups['linuxPath'].Value.Replace('\', '/')
         }
+        $script:WslyBashHelperCache[$cacheKey] = $result
+        return $result
     }
 
     # WSL parses backslashes in native-command arguments as escapes. Forward
@@ -120,10 +139,12 @@ function Resolve-WslyBashHelper {
         throw "wsly could not translate its helper path for WSL: $helperPath"
     }
 
-    return [pscustomobject]@{
+    $result = [pscustomobject]@{
         Distro = $Distro
         Path = $linuxPath.Trim()
     }
+    $script:WslyBashHelperCache[$cacheKey] = $result
+    return $result
 }
 
 # Kept as a function so the PowerShell profile completion bridge can expose a
@@ -138,7 +159,11 @@ function Invoke-Wsly {
 
         [switch]$NoShell,
 
-        [switch]$ShowVersion
+        [switch]$ShowVersion,
+
+        [switch]$Timing,
+
+        [switch]$Quiet
     )
 
     Set-StrictMode -Version Latest
@@ -157,6 +182,8 @@ function Invoke-Wsly {
         return
     }
 
+    $totalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
     if ($NoShell -and $commandWordCount -eq 0) {
         throw 'wsly -NoShell requires a command.'
     }
@@ -164,12 +191,23 @@ function Invoke-Wsly {
     $wslPath = Resolve-WslyWslExecutable
 
     if ($commandWordCount -eq 0) {
+        if (-not $NoShell -and -not $Quiet) {
+            Write-Host 'wsly: starting the default WSL shell...'
+        }
         & $wslPath
         $script:WslyExitCode = $LASTEXITCODE
+        if ($Timing) {
+            Write-Host ('wsly timing: total {0:N0} ms' -f $totalStopwatch.Elapsed.TotalMilliseconds)
+        }
         return
     }
 
+    if (-not $NoShell -and -not $Quiet) {
+        Write-Host 'wsly: starting WSL and loading Bash...'
+    }
+    $helperStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $bashHelper = Resolve-WslyBashHelper -LauncherPath $wslPath -Distro $Distro
+    $helperStopwatch.Stop()
     $wslArguments = @()
     if (-not [string]::IsNullOrWhiteSpace($bashHelper.Distro)) {
         $wslArguments += '-d', $bashHelper.Distro
@@ -180,8 +218,14 @@ function Invoke-Wsly {
         $wslArguments += '--wsly-hold'
     }
 
+    $commandStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     & $wslPath @wslArguments @commandWords
+    $commandStopwatch.Stop()
     $script:WslyExitCode = $LASTEXITCODE
+    if ($Timing) {
+        $totalStopwatch.Stop()
+        Write-Host ('wsly timing: helper resolution {0:N0} ms; WSL Bash command {1:N0} ms; total {2:N0} ms' -f $helperStopwatch.Elapsed.TotalMilliseconds, $commandStopwatch.Elapsed.TotalMilliseconds, $totalStopwatch.Elapsed.TotalMilliseconds)
+    }
 }
 
 # Dot-sourcing makes Invoke-Wsly available to the profile proxy without
@@ -190,5 +234,5 @@ if ($MyInvocation.InvocationName -eq '.') {
     return
 }
 
-Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -ShowVersion:$ShowVersion
+Invoke-Wsly -Command $Command -Distro $Distro -NoShell:$NoShell -ShowVersion:$ShowVersion -Timing:$Timing -Quiet:$Quiet
 exit $script:WslyExitCode

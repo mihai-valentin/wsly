@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # wsly.bash — interactive WSL command handoff.
 #
-# Bash does not read ~/.bashrc when it is invoked with a script filename, even
-# with -i. Source it explicitly so interactive-shell functions are available.
-
-if [ -r "${HOME}/.bashrc" ]; then
-    # shellcheck disable=SC1090
-    . "${HOME}/.bashrc"
-fi
+# wsly invokes Bash with -i. Interactive non-login Bash loads ~/.bashrc before
+# executing this helper, so functions and completion definitions are available
+# without sourcing the file a second time.
 
 if [ "${1-}" = "--complete" ]; then
     shift

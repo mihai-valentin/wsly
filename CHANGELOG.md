@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reduce startup latency by loading interactive Bash configuration only once
+  per wsly Bash process and caching the helper path for each PowerShell session
+  and WSL distro.
+- Cache identical Bash completion requests for 10 seconds.
+- Add `-Timing` / `-t` timing diagnostics and `-Quiet` / `-q` to suppress
+  interactive startup status messages.
+
 ## 1.1.2
 
 - Fix automated release packaging of the Inno Setup installer on GitHub Actions.
