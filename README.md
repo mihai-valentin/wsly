@@ -67,7 +67,9 @@ powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1
 
 It writes both distributable assets and checksums to `dist/` and refuses to
 overwrite an existing release build. The Bash packager remains available for
-building only the portable ZIP on Linux.
+building only the portable ZIP on Linux. When Windows PowerShell runs this
+command from a WSL UNC checkout, it writes to a versioned folder under
+`%TEMP%` instead; the script prints that folder when it finishes.
 
 To replace an existing install:
 

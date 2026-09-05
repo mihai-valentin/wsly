@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - Reduce startup latency by loading interactive Bash configuration only once
   per wsly Bash process and caching the helper path for each PowerShell session
@@ -8,6 +8,8 @@
 - Cache identical Bash completion requests for 10 seconds.
 - Add `-Timing` / `-t` timing diagnostics and `-Quiet` / `-q` to suppress
   interactive startup status messages.
+- Make local release packaging work when Windows PowerShell is launched from a
+  WSL checkout.
 
 ## 1.1.2
 

@@ -1,14 +1,26 @@
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\dist')
+    [string]$OutputDirectory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).ProviderPath
+$usingDefaultOutputDirectory = [string]::IsNullOrWhiteSpace($OutputDirectory)
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim()
+if ($usingDefaultOutputDirectory) {
+    $OutputDirectory = Join-Path $repoRoot 'dist'
+}
+if ($usingDefaultOutputDirectory -and $OutputDirectory -match '^\\\\wsl(?:\.localhost)?\\') {
+    # Windows PowerShell cannot create files through its own WSL UNC provider.
+    # Use a native Windows temp directory for local builds launched from a WSL
+    # checkout; the created path is printed below for installation testing.
+    $OutputDirectory = Join-Path $env:TEMP "wsly-$version-release"
+}
+if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path (Get-Location).Path $OutputDirectory
+}
 $packageName = "wsly-$version"
 $packageDirectory = Join-Path $OutputDirectory $packageName
 $archive = Join-Path $OutputDirectory "$packageName.zip"
