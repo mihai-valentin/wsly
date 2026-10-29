@@ -46,8 +46,11 @@ if ((@($quietMessages | ForEach-Object MessageData) -join "`n") -match 'wsly: st
 
 . (Join-Path $testInstall 'wsly-completion.ps1')
 $preheated = Initialize-WslyCompletion
-if ($preheated.Distro -ne 'default' -or $preheated.ElapsedMilliseconds -lt 0) {
+if ($preheated.Distro -ne 'default' -or -not $preheated.Started -or $preheated.ElapsedMilliseconds -lt 0) {
     throw 'Completion preheating did not report a valid worker.'
+}
+if ((Initialize-WslyCompletion).Started) {
+    throw 'Completion preheating restarted an already running worker.'
 }
 wsly -n printf 'hello' | Out-Null
 $arguments = Get-Content -LiteralPath $argumentLog -Raw
@@ -95,6 +98,32 @@ Clear-WslyCompletionCache
 if ($script:WslyCompletionWorkers.Count -ne 0) {
     throw 'Clearing completion cache did not stop completion workers.'
 }
+
+# A worker that fails to start is not retried on every Tab press; completion
+# falls back to one WSL launch per request.
+Remove-Item -LiteralPath $argumentLog -Force
+$env:WSLY_MOCK_SERVER_FAIL = '1'
+try {
+    foreach ($word in 'ne', 'nex') {
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput("wsly cdp $word", [ref]$tokens, [ref]$errors)
+        $commandAst = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)[0]
+        $fallbackTexts = @(Get-WslyCompletionResults -WordToComplete $word -CommandAst $commandAst | ForEach-Object { $_.CompletionText })
+        if ($fallbackTexts -notcontains 'nexus') {
+            throw 'Completion did not fall back after the worker failed to start.'
+        }
+    }
+}
+finally {
+    Remove-Item Env:WSLY_MOCK_SERVER_FAIL
+}
+$failedWorkerLaunches = @(Get-Content -LiteralPath $argumentLog | Where-Object { $_ -match '--complete-server' })
+$fallbackLaunches = @(Get-Content -LiteralPath $argumentLog | Where-Object { $_ -match '--complete(\s|$)' })
+if ($failedWorkerLaunches.Count -ne 1 -or $fallbackLaunches.Count -ne 2) {
+    throw "Expected one failed worker start and two fallback launches; got $($failedWorkerLaunches.Count) and $($fallbackLaunches.Count)."
+}
+Clear-WslyCompletionCache
 
 Remove-Item -LiteralPath $argumentLog -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $testInstall -Recurse -Force

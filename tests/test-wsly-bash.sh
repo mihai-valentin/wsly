@@ -26,7 +26,12 @@ printf '%s\n' \
     '_project_jump_completion() {' \
     '    COMPREPLY=("demo")' \
     '}' \
-    'complete -F _project_jump_completion project_jump' >> "${test_home}/.bashrc"
+    'complete -F _project_jump_completion project_jump' \
+    '_greedy_jump_completion() {' \
+    '    read -r -t 1 _ || true' \
+    '    COMPREPLY=("greedy")' \
+    '}' \
+    'complete -F _greedy_jump_completion greedy_jump' >> "${test_home}/.bashrc"
 
 printf '%s\n' \
     '#!/usr/bin/env bash' \
@@ -70,19 +75,36 @@ test "${completion_output}" = 'demo'
 completion_output=$(HOME="${test_home}" bash --noprofile -i "${helper}" --complete project_jump --wsly-completion-empty-argument--)
 test "${completion_output}" = 'demo'
 
-completion_request=$(printf 'project_jump\0\0' | base64 --wrap=0)
+# Server requests are "<id> <base64 NUL-delimited words>". Windows writes
+# CRLF line endings. Each reply is one "__WSLY_COMPLETION_RESULT__ <id>
+# <base64 newline-delimited candidates>" line.
+encode_words() {
+    printf '%s\0' "$@" | base64 | tr -d '\n'
+}
+decode_reply() {
+    local expected_id=$1 marker id payload
+    read -r -t 10 marker id payload <&"${WSLY_COMPLETION_SERVER[0]}"
+    test "${marker}" = '__WSLY_COMPLETION_RESULT__'
+    test "${id}" = "${expected_id}"
+    printf '%s' "${payload}" | base64 -d
+}
+
 coproc WSLY_COMPLETION_SERVER {
     HOME="${test_home}" bash --noprofile -i "${helper}" --complete-server
 }
-read -r server_ready <&"${WSLY_COMPLETION_SERVER[0]}"
+read -r -t 10 server_ready <&"${WSLY_COMPLETION_SERVER[0]}"
 test "${server_ready}" = '__WSLY_COMPLETION_READY__'
-printf '%s\n' "${completion_request}" >&"${WSLY_COMPLETION_SERVER[1]}"
-read -r server_begin <&"${WSLY_COMPLETION_SERVER[0]}"
-read -r server_candidate <&"${WSLY_COMPLETION_SERVER[0]}"
-read -r server_end <&"${WSLY_COMPLETION_SERVER[0]}"
-test "${server_begin}" = '__WSLY_COMPLETION_BEGIN__'
-test "$(printf '%s' "${server_candidate}" | base64 --decode)" = 'demo'
-test "${server_end}" = '__WSLY_COMPLETION_END__'
+
+# A completion function that reads stdin must not consume later requests.
+printf '%s %s\r\n' 1 "$(encode_words greedy_jump '')" >&"${WSLY_COMPLETION_SERVER[1]}"
+printf '%s %s\r\n' 2 "$(encode_words project_jump '')" >&"${WSLY_COMPLETION_SERVER[1]}"
+test "$(decode_reply 1)" = 'greedy'
+test "$(decode_reply 2)" = 'demo'
+
+# An empty candidate list still produces a reply.
+printf '%s %s\r\n' 3 "$(encode_words no_completion_defined '')" >&"${WSLY_COMPLETION_SERVER[1]}"
+test -z "$(decode_reply 3)"
+
 kill "${WSLY_COMPLETION_SERVER_PID}" 2>/dev/null || true
 wait "${WSLY_COMPLETION_SERVER_PID}" 2>/dev/null || true
 

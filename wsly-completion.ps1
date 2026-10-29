@@ -12,7 +12,14 @@ if ($null -eq (Get-Variable -Name WslyCompletionResultCache -Scope Script -Error
 if ($null -eq (Get-Variable -Name WslyCompletionWorkers -Scope Script -ErrorAction SilentlyContinue)) {
     $script:WslyCompletionWorkers = @{}
 }
+if ($null -eq (Get-Variable -Name WslyCompletionWorkerFailures -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:WslyCompletionWorkerFailures = @{}
+}
 $script:WslyCompletionCacheTtl = [TimeSpan]::FromSeconds(10)
+# A cold WSL VM plus a heavy ~/.bashrc can take several seconds to start; a
+# single completion request should not.
+$script:WslyCompletionWorkerStartTimeout = [TimeSpan]::FromSeconds(20)
+$script:WslyCompletionRequestTimeout = [TimeSpan]::FromSeconds(5)
 
 # A PowerShell function guarantees that Register-ArgumentCompleter is called
 # for `wsly`, instead of relying on host-specific completion behavior for a
@@ -171,6 +178,42 @@ function ConvertTo-WslyCompletionRequest {
     }
 }
 
+function Get-WslyCompletionArguments {
+    param(
+        [Parameter(Mandatory)]$Helper,
+        [Parameter(Mandatory)][string]$Mode
+    )
+
+    $arguments = @()
+    if (-not [string]::IsNullOrWhiteSpace($Helper.Distro)) {
+        $arguments += '-d', $Helper.Distro
+    }
+    $arguments += '--', 'bash', '-i', $Helper.Path, $Mode
+    return $arguments
+}
+
+function Get-WslyCompletionWorkerKey {
+    param(
+        [Parameter(Mandatory)][string]$LauncherPath,
+        [Parameter(Mandatory)]$Helper
+    )
+
+    return '{0}|{1}|{2}' -f $LauncherPath, $Helper.Distro, $Helper.Path
+}
+
+function Stop-WslyCompletionProcess {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
+
+    try { $Process.StandardInput.Close() } catch { }
+    try {
+        if (-not $Process.HasExited) {
+            $Process.Kill()
+        }
+    }
+    catch { }
+    try { $Process.Dispose() } catch { }
+}
+
 function Stop-WslyCompletionWorker {
     param([Parameter(Mandatory)][string]$Key)
 
@@ -178,14 +221,7 @@ function Stop-WslyCompletionWorker {
     if ($null -eq $worker) {
         return
     }
-    try { $worker.Input.Close() } catch { }
-    try {
-        if (-not $worker.Process.HasExited) {
-            $worker.Process.Kill()
-        }
-    }
-    catch { }
-    try { $worker.Process.Dispose() } catch { }
+    Stop-WslyCompletionProcess -Process $worker.Process
     $script:WslyCompletionWorkers.Remove($Key)
 }
 
@@ -194,6 +230,7 @@ function Clear-WslyCompletionCache {
     param()
 
     $script:WslyCompletionResultCache.Clear()
+    $script:WslyCompletionWorkerFailures.Clear()
     foreach ($key in @($script:WslyCompletionWorkers.Keys)) {
         Stop-WslyCompletionWorker -Key $key
     }
@@ -214,13 +251,37 @@ function Initialize-WslyCompletion {
         throw 'wsly could not resolve its Bash completion helper.'
     }
 
+    # An explicit initialization retries a worker that failed earlier.
+    $script:WslyCompletionWorkerFailures.Remove((Get-WslyCompletionWorkerKey -LauncherPath $launcher -Helper $helper))
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $null = Get-WslyCompletionWorker -LauncherPath $launcher -Helper $helper
+    $workerHandle = Get-WslyCompletionWorker -LauncherPath $launcher -Helper $helper
     $stopwatch.Stop()
     [pscustomobject]@{
         Distro = if ([string]::IsNullOrWhiteSpace($helper.Distro)) { 'default' } else { $helper.Distro }
+        Started = $workerHandle.Started
         ElapsedMilliseconds = [math]::Round($stopwatch.Elapsed.TotalMilliseconds)
     }
+}
+
+function Read-WslyCompletionWorkerLine {
+    param(
+        [Parameter(Mandatory)]$Worker,
+        [Parameter(Mandatory)][System.Diagnostics.Stopwatch]$Stopwatch,
+        [Parameter(Mandatory)][TimeSpan]$Timeout
+    )
+
+    # StreamReader allows one pending read at a time, and an interrupted Tab
+    # press can leave one behind. Keep it and let the next read finish it.
+    if ($null -eq $Worker.PendingRead) {
+        $Worker.PendingRead = $Worker.Output.ReadLineAsync()
+    }
+    $remaining = $Timeout - $Stopwatch.Elapsed
+    if ($remaining -le [TimeSpan]::Zero -or -not $Worker.PendingRead.Wait($remaining)) {
+        throw [System.TimeoutException]::new('wsly completion worker did not respond in time.')
+    }
+    $line = $Worker.PendingRead.Result
+    $Worker.PendingRead = $null
+    return $line
 }
 
 function Get-WslyCompletionWorker {
@@ -229,24 +290,23 @@ function Get-WslyCompletionWorker {
         [Parameter(Mandatory)]$Helper
     )
 
-    $workerKey = '{0}|{1}|{2}' -f $LauncherPath, $Helper.Distro, $Helper.Path
+    $workerKey = Get-WslyCompletionWorkerKey -LauncherPath $LauncherPath -Helper $Helper
+    if ($script:WslyCompletionWorkerFailures.ContainsKey($workerKey)) {
+        # Don't pay for a failing worker start on every Tab press; the caller
+        # falls back to one WSL launch per request.
+        throw 'wsly completion worker failed earlier in this session.'
+    }
     $existing = $script:WslyCompletionWorkers[$workerKey]
     if ($null -ne $existing -and -not $existing.Process.HasExited) {
-        return [pscustomobject]@{ Key = $workerKey; Worker = $existing }
+        return [pscustomobject]@{ Key = $workerKey; Worker = $existing; Started = $false }
     }
     if ($null -ne $existing) {
         Stop-WslyCompletionWorker -Key $workerKey
     }
 
-    $workerArguments = @()
-    if (-not [string]::IsNullOrWhiteSpace($Helper.Distro)) {
-        $workerArguments += '-d', $Helper.Distro
-    }
-    $workerArguments += '--', 'bash', '-i', $Helper.Path, '--complete-server'
-
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $LauncherPath
-    $startInfo.Arguments = (($workerArguments | ForEach-Object { ConvertTo-WslyNativeCommandLineArgument -Text $_ }) -join ' ')
+    $startInfo.Arguments = ((Get-WslyCompletionArguments -Helper $Helper -Mode '--complete-server' | ForEach-Object { ConvertTo-WslyNativeCommandLineArgument -Text $_ }) -join ' ')
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardInput = $true
@@ -256,34 +316,41 @@ function Get-WslyCompletionWorker {
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     if (-not $process.Start()) {
+        $script:WslyCompletionWorkerFailures[$workerKey] = $true
         throw 'wsly could not start its WSL completion worker.'
     }
     # Drain stderr asynchronously. Interactive Bash can emit job-control
     # warnings when its terminal is redirected by the PowerShell completer.
     $process.BeginErrorReadLine()
-    $ready = $false
-    while (-not $process.HasExited) {
-        $line = $process.StandardOutput.ReadLine()
-        if ($null -eq $line) {
-            break
-        }
-        if ($line -eq '__WSLY_COMPLETION_READY__') {
-            $ready = $true
-            break
-        }
-    }
-    if (-not $ready) {
-        try { $process.Dispose() } catch { }
-        throw 'wsly completion worker exited before it was ready.'
-    }
-
+    $process.StandardInput.NewLine = "`n"
     $worker = [pscustomobject]@{
         Process = $process
         Input = $process.StandardInput
         Output = $process.StandardOutput
+        PendingRead = $null
+        NextRequestId = 1
     }
+
+    try {
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($true) {
+            $line = Read-WslyCompletionWorkerLine -Worker $worker -Stopwatch $stopwatch -Timeout $script:WslyCompletionWorkerStartTimeout
+            if ($null -eq $line) {
+                throw 'wsly completion worker exited before it was ready.'
+            }
+            if ($line -eq '__WSLY_COMPLETION_READY__') {
+                break
+            }
+        }
+    }
+    catch {
+        Stop-WslyCompletionProcess -Process $process
+        $script:WslyCompletionWorkerFailures[$workerKey] = $true
+        throw
+    }
+
     $script:WslyCompletionWorkers[$workerKey] = $worker
-    return [pscustomobject]@{ Key = $workerKey; Worker = $worker }
+    return [pscustomobject]@{ Key = $workerKey; Worker = $worker; Started = $true }
 }
 
 function Invoke-WslyCompletionWorker {
@@ -294,27 +361,23 @@ function Invoke-WslyCompletionWorker {
     )
 
     $workerHandle = Get-WslyCompletionWorker -LauncherPath $LauncherPath -Helper $Helper
+    $worker = $workerHandle.Worker
+    $requestId = $worker.NextRequestId
+    $worker.NextRequestId++
     try {
-        $workerHandle.Worker.Input.WriteLine((ConvertTo-WslyCompletionRequest -Words $Words))
-        $candidates = @()
-        $readingCandidates = $false
+        $worker.Input.WriteLine(('{0} {1}' -f $requestId, (ConvertTo-WslyCompletionRequest -Words $Words)))
+        # Skip stray .bashrc output and replies to requests an earlier,
+        # interrupted Tab press abandoned.
+        $replyPrefix = "__WSLY_COMPLETION_RESULT__ $requestId "
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         while ($true) {
-            $line = $workerHandle.Worker.Output.ReadLine()
+            $line = Read-WslyCompletionWorkerLine -Worker $worker -Stopwatch $stopwatch -Timeout $script:WslyCompletionRequestTimeout
             if ($null -eq $line) {
                 throw 'wsly completion worker stopped while handling a request.'
             }
-            if ($line -eq '__WSLY_COMPLETION_BEGIN__') {
-                $readingCandidates = $true
-                continue
-            }
-            if ($line -eq '__WSLY_COMPLETION_END__') {
-                if ($readingCandidates) {
-                    return $candidates
-                }
-                continue
-            }
-            if ($readingCandidates) {
-                $candidates += [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($line))
+            if ($line.StartsWith($replyPrefix, [System.StringComparison]::Ordinal)) {
+                $reply = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($line.Substring($replyPrefix.Length)))
+                return @($reply.Split("`n") | Where-Object { $_ -ne '' })
             }
         }
     }
@@ -399,12 +462,6 @@ function Get-WslyCompletionResults {
         $completionPrefix = $words[$words.Count - 1]
     }
 
-    $arguments = @()
-    if (-not [string]::IsNullOrWhiteSpace($helper.Distro)) {
-        $arguments += '-d', $helper.Distro
-    }
-    $arguments += '--', 'bash', '-i', $helper.Path, '--complete'
-
     # PowerShell can call an argument completer again for each Tab press. Keep
     # an exact request's candidates briefly, so cycling the same choices does
     # not repeatedly start WSL and interactive Bash. The helper path and distro
@@ -425,9 +482,14 @@ function Get-WslyCompletionResults {
         try {
             $candidates = @(Invoke-WslyCompletionWorker -LauncherPath $launcher -Helper $helper -Words $words)
         }
+        catch [System.TimeoutException] {
+            # A one-off WSL launch would hang the same way; offer nothing.
+            $candidates = @()
+        }
         catch {
             # Completion remains available even if a long-lived worker cannot
             # start on an unusual WSL installation.
+            $arguments = Get-WslyCompletionArguments -Helper $helper -Mode '--complete'
             $candidates = @(& $launcher @arguments @words 2>$null)
         }
         $script:WslyCompletionResultCache[$cacheKey] = [pscustomobject]@{

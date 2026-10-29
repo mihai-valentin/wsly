@@ -8,6 +8,9 @@
   completion workers after shell configuration changes.
 - Add `Initialize-WslyCompletion` to preheat a completion worker explicitly or
   from a PowerShell profile.
+- Time out slow completion requests and worker startup, and fall back to one
+  WSL launch per request for the rest of the session when a worker cannot
+  start.
 
 ## 1.2.0
 

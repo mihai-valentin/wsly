@@ -197,8 +197,13 @@ Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
 The first Tab press for a distro starts a persistent WSL Bash completion worker.
 It loads your interactive configuration once and serves later requests in the
 same PowerShell session, avoiding repeated WSL and Bash startup. wsly also
-caches identical completion requests for 10 seconds. After changing `.bashrc`
-or a completion definition, restart PowerShell or run:
+caches identical completion requests for 10 seconds. A completion request that
+takes longer than 5 seconds returns no candidates. If the worker cannot start
+within 20 seconds, wsly stops trying for that PowerShell session and starts
+WSL once per completion request instead.
+
+After changing `.bashrc` or a completion definition, or to retry a failed
+worker, restart PowerShell or run:
 
 ```powershell
 Clear-WslyCompletionCache
@@ -212,10 +217,17 @@ Initialize-WslyCompletion
 Initialize-WslyCompletion -Distro Ubuntu
 ```
 
-It reports the one-time startup duration. To make this automatic, add
-`Initialize-WslyCompletion | Out-Null` after wsly's completion line in your
-PowerShell profile. That trades a slower PowerShell startup for an already-warm
-first completion.
+It reports how long the call took and whether it started the worker; when a
+worker is already running, `Started` is `False` and the time is near zero. To
+make this automatic, add this after wsly's completion line in your PowerShell
+profile:
+
+```powershell
+try { Initialize-WslyCompletion | Out-Null } catch { }
+```
+
+The `try` keeps PowerShell starting cleanly when WSL is unavailable. Preheating
+trades a slower PowerShell startup for an already-warm first completion.
 
 Completion definitions that
 depend on an interactive terminal, terminal UI, or Bash readline internals may

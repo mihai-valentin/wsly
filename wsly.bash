@@ -51,22 +51,24 @@ if [ "${1-}" = "--complete" ]; then
 fi
 
 if [ "${1-}" = "--complete-server" ]; then
-    # The PowerShell bridge sends one base64-encoded, NUL-delimited argv list
-    # per line. A persistent server keeps interactive Bash and ~/.bashrc warm
-    # between Tab presses. Candidate lines are base64-encoded to reserve the
-    # protocol marker strings for framing.
+    # A persistent server keeps interactive Bash and ~/.bashrc warm between
+    # Tab presses. The PowerShell bridge sends one "<id> <base64>" request per
+    # line, where the payload is a NUL-delimited argv list. Each reply is a
+    # single line carrying the same id and the base64-encoded candidates, so
+    # the bridge can skip stray .bashrc output and replies to abandoned
+    # requests. Windows writes CRLF; drop the CR before decoding.
     printf '%s\n' '__WSLY_COMPLETION_READY__'
     while IFS= read -r wsly_request; do
+        wsly_request=${wsly_request%$'\r'}
+        wsly_request_id=${wsly_request%% *}
         wsly_words=()
         while IFS= read -r -d '' wsly_word; do
             wsly_words+=("${wsly_word}")
-        done < <(printf '%s' "${wsly_request}" | base64 --decode)
+        done < <(printf '%s' "${wsly_request#* }" | base64 -d)
 
-        printf '%s\n' '__WSLY_COMPLETION_BEGIN__'
-        while IFS= read -r wsly_candidate; do
-            printf '%s\n' "$(printf '%s' "${wsly_candidate}" | base64 --wrap=0)"
-        done < <(wsly_complete "${wsly_words[@]}")
-        printf '%s\n' '__WSLY_COMPLETION_END__'
+        # Completion functions must not read the request stream.
+        wsly_reply=$(wsly_complete "${wsly_words[@]}" </dev/null | base64 | tr -d '\n')
+        printf '__WSLY_COMPLETION_RESULT__ %s %s\n' "${wsly_request_id}" "${wsly_reply}"
     done
     exit 0
 fi
