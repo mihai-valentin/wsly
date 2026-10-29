@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Keep one interactive WSL Bash completion worker per PowerShell session and
+  distro to avoid repeated WSL and Bash startup after the first Tab press.
+- Add `Clear-WslyCompletionCache` to clear cached candidates and restart
+  completion workers after shell configuration changes.
+- Add `Initialize-WslyCompletion` to preheat a completion worker explicitly or
+  from a PowerShell profile.
+
 ## 1.2.0
 
 - Reduce startup latency by loading interactive Bash configuration only once

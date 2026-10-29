@@ -70,4 +70,20 @@ test "${completion_output}" = 'demo'
 completion_output=$(HOME="${test_home}" bash --noprofile -i "${helper}" --complete project_jump --wsly-completion-empty-argument--)
 test "${completion_output}" = 'demo'
 
+completion_request=$(printf 'project_jump\0\0' | base64 --wrap=0)
+coproc WSLY_COMPLETION_SERVER {
+    HOME="${test_home}" bash --noprofile -i "${helper}" --complete-server
+}
+read -r server_ready <&"${WSLY_COMPLETION_SERVER[0]}"
+test "${server_ready}" = '__WSLY_COMPLETION_READY__'
+printf '%s\n' "${completion_request}" >&"${WSLY_COMPLETION_SERVER[1]}"
+read -r server_begin <&"${WSLY_COMPLETION_SERVER[0]}"
+read -r server_candidate <&"${WSLY_COMPLETION_SERVER[0]}"
+read -r server_end <&"${WSLY_COMPLETION_SERVER[0]}"
+test "${server_begin}" = '__WSLY_COMPLETION_BEGIN__'
+test "$(printf '%s' "${server_candidate}" | base64 --decode)" = 'demo'
+test "${server_end}" = '__WSLY_COMPLETION_END__'
+kill "${WSLY_COMPLETION_SERVER_PID}" 2>/dev/null || true
+wait "${WSLY_COMPLETION_SERVER_PID}" 2>/dev/null || true
+
 printf '%s\n' 'wsly.bash tests passed'

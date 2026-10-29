@@ -194,9 +194,30 @@ completion menu instead, add this to your PowerShell profile:
 Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
 ```
 
-The first Tab press for a distro starts WSL to obtain candidates; wsly caches
-its helper path for the rest of the PowerShell session and caches identical
-completion requests for 10 seconds. Completion definitions that
+The first Tab press for a distro starts a persistent WSL Bash completion worker.
+It loads your interactive configuration once and serves later requests in the
+same PowerShell session, avoiding repeated WSL and Bash startup. wsly also
+caches identical completion requests for 10 seconds. After changing `.bashrc`
+or a completion definition, restart PowerShell or run:
+
+```powershell
+Clear-WslyCompletionCache
+```
+
+To preheat the worker immediately after opening PowerShell, rather than waiting
+for the first Tab press, run:
+
+```powershell
+Initialize-WslyCompletion
+Initialize-WslyCompletion -Distro Ubuntu
+```
+
+It reports the one-time startup duration. To make this automatic, add
+`Initialize-WslyCompletion | Out-Null` after wsly's completion line in your
+PowerShell profile. That trades a slower PowerShell startup for an already-warm
+first completion.
+
+Completion definitions that
 depend on an interactive terminal, terminal UI, or Bash readline internals may
 not be portable through the bridge.
 

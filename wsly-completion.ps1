@@ -9,6 +9,9 @@ $script:WslyLauncher = Join-Path $PSScriptRoot 'wsly.ps1'
 if ($null -eq (Get-Variable -Name WslyCompletionResultCache -Scope Script -ErrorAction SilentlyContinue)) {
     $script:WslyCompletionResultCache = @{}
 }
+if ($null -eq (Get-Variable -Name WslyCompletionWorkers -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:WslyCompletionWorkers = @{}
+}
 $script:WslyCompletionCacheTtl = [TimeSpan]::FromSeconds(10)
 
 # A PowerShell function guarantees that Register-ArgumentCompleter is called
@@ -117,6 +120,210 @@ function ConvertTo-WslyCompletionText {
     return $Text
 }
 
+function ConvertTo-WslyNativeCommandLineArgument {
+    param([Parameter(Mandatory)][string]$Text)
+
+    if ($Text -notmatch '[\s"]' -and $Text.Length -gt 0) {
+        return $Text
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Text.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$builder.Append('\', ($backslashCount * 2) + 1)
+            [void]$builder.Append('"')
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append('\', $backslashCount)
+            $backslashCount = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append('\', $backslashCount * 2)
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function ConvertTo-WslyCompletionRequest {
+    param([Parameter(Mandatory)][string[]]$Words)
+
+    $stream = [System.IO.MemoryStream]::new()
+    try {
+        foreach ($word in $Words) {
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($word)
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.WriteByte(0)
+        }
+        return [System.Convert]::ToBase64String($stream.ToArray())
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Stop-WslyCompletionWorker {
+    param([Parameter(Mandatory)][string]$Key)
+
+    $worker = $script:WslyCompletionWorkers[$Key]
+    if ($null -eq $worker) {
+        return
+    }
+    try { $worker.Input.Close() } catch { }
+    try {
+        if (-not $worker.Process.HasExited) {
+            $worker.Process.Kill()
+        }
+    }
+    catch { }
+    try { $worker.Process.Dispose() } catch { }
+    $script:WslyCompletionWorkers.Remove($Key)
+}
+
+function Clear-WslyCompletionCache {
+    [CmdletBinding()]
+    param()
+
+    $script:WslyCompletionResultCache.Clear()
+    foreach ($key in @($script:WslyCompletionWorkers.Keys)) {
+        Stop-WslyCompletionWorker -Key $key
+    }
+}
+
+function Initialize-WslyCompletion {
+    [CmdletBinding()]
+    param(
+        [string]$Distro
+    )
+
+    $launcher = Get-WslyCompletionLauncher
+    if ($null -eq $launcher) {
+        throw 'wsly could not find a WSL launcher to initialize completion.'
+    }
+    $helper = Get-WslyCompletionHelperPath -LauncherPath $launcher -Distro $Distro
+    if ($null -eq $helper) {
+        throw 'wsly could not resolve its Bash completion helper.'
+    }
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $null = Get-WslyCompletionWorker -LauncherPath $launcher -Helper $helper
+    $stopwatch.Stop()
+    [pscustomobject]@{
+        Distro = if ([string]::IsNullOrWhiteSpace($helper.Distro)) { 'default' } else { $helper.Distro }
+        ElapsedMilliseconds = [math]::Round($stopwatch.Elapsed.TotalMilliseconds)
+    }
+}
+
+function Get-WslyCompletionWorker {
+    param(
+        [Parameter(Mandatory)][string]$LauncherPath,
+        [Parameter(Mandatory)]$Helper
+    )
+
+    $workerKey = '{0}|{1}|{2}' -f $LauncherPath, $Helper.Distro, $Helper.Path
+    $existing = $script:WslyCompletionWorkers[$workerKey]
+    if ($null -ne $existing -and -not $existing.Process.HasExited) {
+        return [pscustomobject]@{ Key = $workerKey; Worker = $existing }
+    }
+    if ($null -ne $existing) {
+        Stop-WslyCompletionWorker -Key $workerKey
+    }
+
+    $workerArguments = @()
+    if (-not [string]::IsNullOrWhiteSpace($Helper.Distro)) {
+        $workerArguments += '-d', $Helper.Distro
+    }
+    $workerArguments += '--', 'bash', '-i', $Helper.Path, '--complete-server'
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $LauncherPath
+    $startInfo.Arguments = (($workerArguments | ForEach-Object { ConvertTo-WslyNativeCommandLineArgument -Text $_ }) -join ' ')
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) {
+        throw 'wsly could not start its WSL completion worker.'
+    }
+    # Drain stderr asynchronously. Interactive Bash can emit job-control
+    # warnings when its terminal is redirected by the PowerShell completer.
+    $process.BeginErrorReadLine()
+    $ready = $false
+    while (-not $process.HasExited) {
+        $line = $process.StandardOutput.ReadLine()
+        if ($null -eq $line) {
+            break
+        }
+        if ($line -eq '__WSLY_COMPLETION_READY__') {
+            $ready = $true
+            break
+        }
+    }
+    if (-not $ready) {
+        try { $process.Dispose() } catch { }
+        throw 'wsly completion worker exited before it was ready.'
+    }
+
+    $worker = [pscustomobject]@{
+        Process = $process
+        Input = $process.StandardInput
+        Output = $process.StandardOutput
+    }
+    $script:WslyCompletionWorkers[$workerKey] = $worker
+    return [pscustomobject]@{ Key = $workerKey; Worker = $worker }
+}
+
+function Invoke-WslyCompletionWorker {
+    param(
+        [Parameter(Mandatory)][string]$LauncherPath,
+        [Parameter(Mandatory)]$Helper,
+        [Parameter(Mandatory)][string[]]$Words
+    )
+
+    $workerHandle = Get-WslyCompletionWorker -LauncherPath $LauncherPath -Helper $Helper
+    try {
+        $workerHandle.Worker.Input.WriteLine((ConvertTo-WslyCompletionRequest -Words $Words))
+        $candidates = @()
+        $readingCandidates = $false
+        while ($true) {
+            $line = $workerHandle.Worker.Output.ReadLine()
+            if ($null -eq $line) {
+                throw 'wsly completion worker stopped while handling a request.'
+            }
+            if ($line -eq '__WSLY_COMPLETION_BEGIN__') {
+                $readingCandidates = $true
+                continue
+            }
+            if ($line -eq '__WSLY_COMPLETION_END__') {
+                if ($readingCandidates) {
+                    return $candidates
+                }
+                continue
+            }
+            if ($readingCandidates) {
+                $candidates += [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($line))
+            }
+        }
+    }
+    catch {
+        Stop-WslyCompletionWorker -Key $workerHandle.Key
+        throw
+    }
+}
+
 function Get-WslyCompletionResults {
     param(
         [AllowNull()]
@@ -215,7 +422,14 @@ function Get-WslyCompletionResults {
         $candidates = @($cacheEntry.Candidates)
     }
     else {
-        $candidates = @(& $launcher @arguments @words 2>$null)
+        try {
+            $candidates = @(Invoke-WslyCompletionWorker -LauncherPath $launcher -Helper $helper -Words $words)
+        }
+        catch {
+            # Completion remains available even if a long-lived worker cannot
+            # start on an unusual WSL installation.
+            $candidates = @(& $launcher @arguments @words 2>$null)
+        }
         $script:WslyCompletionResultCache[$cacheKey] = [pscustomobject]@{
             CreatedAt = $now
             Candidates = $candidates

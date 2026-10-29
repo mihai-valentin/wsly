@@ -45,6 +45,10 @@ if ((@($quietMessages | ForEach-Object MessageData) -join "`n") -match 'wsly: st
 }
 
 . (Join-Path $testInstall 'wsly-completion.ps1')
+$preheated = Initialize-WslyCompletion
+if ($preheated.Distro -ne 'default' -or $preheated.ElapsedMilliseconds -lt 0) {
+    throw 'Completion preheating did not report a valid worker.'
+}
 wsly -n printf 'hello' | Out-Null
 $arguments = Get-Content -LiteralPath $argumentLog -Raw
 if ($arguments -match '(^|\s)-d\s+--') {
@@ -71,6 +75,13 @@ $completionLaunches = @(
 if ($completionLaunches.Count -ne 1) {
     throw "Expected repeated completion to use the result cache; got $($completionLaunches.Count) WSL completion launches."
 }
+$workerLaunches = @(
+    Get-Content -LiteralPath $argumentLog |
+        Where-Object { $_ -match '--complete-server' }
+)
+if ($workerLaunches.Count -ne 1) {
+    throw "Expected completion to use one persistent worker; got $($workerLaunches.Count) worker launches."
+}
 
 $pathTranslations = @(
     Get-Content -LiteralPath $argumentLog |
@@ -78,6 +89,11 @@ $pathTranslations = @(
 )
 if ($pathTranslations.Count -ne 2) {
     throw "Expected cached completion to avoid another wslpath launch; got $($pathTranslations.Count) translations."
+}
+
+Clear-WslyCompletionCache
+if ($script:WslyCompletionWorkers.Count -ne 0) {
+    throw 'Clearing completion cache did not stop completion workers.'
 }
 
 Remove-Item -LiteralPath $argumentLog -Force -ErrorAction SilentlyContinue
