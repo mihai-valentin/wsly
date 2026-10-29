@@ -1,6 +1,7 @@
 # wsly
 
-[![100% created with Codex](https://img.shields.io/badge/100%25%20created%20with-Codex-412991)](https://openai.com/codex/)
+[![81% of code written by Codex](https://img.shields.io/badge/code%20by%20Codex-81%25-412991)](https://openai.com/codex/)
+[![19% of code written by Claude Code](https://img.shields.io/badge/code%20by%20Claude%20Code-19%25-D97757)](https://claude.com/claude-code)
 
 `wsly` runs a command inside an **interactive** WSL Bash session, then leaves
 that session open when the command succeeds.
@@ -296,8 +297,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, then follow the
 
 ## Authorship
 
-The badge at the top reports which coding agents wrote wsly's code. To
-recompute it, run:
+The badges at the top report which coding agents wrote wsly's code. To
+recompute them, run:
 
 ```bash
 bash scripts/attribution.sh
