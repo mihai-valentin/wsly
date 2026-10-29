@@ -282,6 +282,20 @@ responding to review feedback.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, then follow the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Authorship
+
+The badge at the top reports which coding agents wrote wsly's code. To
+recompute it, run:
+
+```bash
+bash scripts/attribution.sh
+```
+
+It credits each committed, non-blank line of code to the commit that last
+changed it, as `git blame` does, and reads that commit's `Co-Authored-By:`
+trailer to find the agent. A line rewritten by another agent moves to that
+agent. Documentation is not counted.
+
 ## License
 
 [MIT](LICENSE)

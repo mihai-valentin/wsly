@@ -38,6 +38,10 @@ in the pull request, and review the resulting change yourself before submitting
 it. Contributors remain responsible for correctness, security, licensing, and
 compliance with the [Code of Conduct](CODE_OF_CONDUCT.md).
 
+Credit the agent with a `Co-Authored-By:` trailer naming it, for example
+`Co-Authored-By: Codex <noreply@openai.com>`. The README's authorship figures
+come from `scripts/attribution.sh`, which reads those trailers.
+
 ## Pull-request expectations
 
 - Explain the user-visible change and its motivation.
